@@ -26,6 +26,7 @@ var Game = function() {
 				var dY = dX * slope;
 				var x = right ? Math.ceil(player.x) : Math.floor(player.x);
 				var y = player.y + (x - player.x) * slope;
+				var wallType;
 				while (x >= 0 && x < minimap.cellsAcross && y >= 0 && y < minimap.cellsDown) {
 					wallX = Math.floor(x + (right ? 0 : -1));
 					wallY = Math.floor(y);
@@ -35,6 +36,7 @@ var Game = function() {
 						distance = Math.sqrt(distanceX * distanceX + distanceY * distanceY);
 						xHit = x;
 						yHit = y;
+						wallType = map[wallY][wallX];
 						break;
 					}
 					x += dX;
@@ -56,15 +58,16 @@ var Game = function() {
 							distance = blockDistance;
 							xHit = x;
 							yHit = y;
+							wallType = map[wallY][wallX];
 						}
 						break;
 					}
 					x += dX;
 					y += dY;
 				}
-				this.draw(xHit, yHit, distance, i, rayAngle);
+				this.draw(xHit, yHit, distance, i, rayAngle, wallType);
 			};
-			this.draw = function(rayX, rayY, distance, i, rayAngle) {
+			this.draw = function(rayX, rayY, distance, i, rayAngle, wallType) {
 				minimap.context.beginPath();
 				minimap.context.moveTo(minimap.cellWidth * player.x, minimap.cellHeight * player.y);
 				minimap.context.lineTo(rayX * minimap.cellWidth, rayY * minimap.cellHeight);
@@ -74,7 +77,11 @@ var Game = function() {
 				var wallHalfHeight = canvas.height / adjustedDistance / 2;
 				var wallTop = Math.max(0, canvas.halfHeight - wallHalfHeight);
 				var wallBottom = Math.min(canvas.height, canvas.halfHeight + wallHalfHeight);
-				canvas.drawSliver(i, wallTop, wallBottom, "#000")
+				var percentageDistance = adjustedDistance / Math.sqrt(minimap.cellsAcross * minimap.cellsAcross + minimap.cellsDown * minimap.cellsDown);
+				var brightness = 1 - percentageDistance;
+				var shade = Math.floor(palette.shades * brightness);
+				var color = palette.walls[wallType][shade];
+				canvas.drawSliver(i, wallTop, wallBottom, color);
 
 			}
 		}
@@ -141,13 +148,11 @@ var Game = function() {
 			this.width = this.element.width;
 			this.height = this.element.height;
 			this.halfHeight = this.height / 2;
-			this.ground = '#DFD3C3';
-			this.sky = '#418DFB';
 			this.blank = function() {
 				this.context.clearRect(0, 0, this.width, this.height);
-				this.context.fillStyle = this.sky;
+				this.context.fillStyle = palette.sky;
 				this.context.fillRect(0, 0, this.width, this.halfHeight);
-				this.context.fillStyle = this.ground;
+				this.context.fillStyle = palette.ground;
 				this.context.fillRect(0, this.halfHeight, this.width, this.height);
 			}
 			this.drawSliver = function(sliver, wallTop, wallBottom, color) {
@@ -188,6 +193,61 @@ var Game = function() {
 			};
 		}
 	};
+
+	var camera = {
+		init: function() {
+			this.context = document.getElementById('screenshot').getContext('2d');
+			var filtered = false;
+			var f;
+			$("#screenshot").on("click", function() {
+				if (filtered) {
+					filtered = false;
+					f.reset().render();
+				} else {
+					filtered = true;
+					f = Filtrr2("#screenshot", function() {
+						this.expose(50)
+							.render();
+					}, {
+						store: false
+					});
+				};
+			});
+			this.takePicture = function() {
+				var image = new Image();
+				image.src = canvas.element.toDataURL('image/png');
+				image.onload = function() {
+					camera.context.drawImage(image, 0, 0);
+				}
+				filtered = false;
+			}
+		}
+	};
+	var palette = {
+		init: function() {
+			this.ground = '#DFD3C3';
+			this.sky = '#418DFB';
+			this.shades = 300;
+			var initialWallColors = [
+				[85, 68, 102],
+				[255, 53, 91],
+				[255, 201, 52],
+				[118, 204, 159]
+			];
+			this.walls = [];
+			for (var i = 0; i < initialWallColors.length; i++) {
+				this.walls[i] = [];
+				for (var j = 0; j < this.shades; j++) {
+					var red = Math.round(initialWallColors[i][0] * j / this.shades);
+					var green = Math.round(initialWallColors[i][1] * j / this.shades);
+					var blue = Math.round(initialWallColors[i][2] * j / this.shades);
+					var color = "rgb(" + red + "," + green + "," + blue + ")";
+					this.walls[i].push(color);
+				};
+			};
+		}
+	}
+
 	this.draw = function() {
 		minimap.draw();
 		player.draw();
@@ -195,10 +255,12 @@ var Game = function() {
 		raycaster.castRays();
 	};
 	this.setup = function() {
+		camera.init();
 		minimap.init();
 		player.init();
 		raycaster.init();
 		canvas.init();
+		palette.init();
 	};
 	this.update = function() {
 		if (jaws.pressed("left")) {
@@ -220,6 +282,9 @@ var Game = function() {
 		if (jaws.on_keyup(["up", "down"], function() {
 			player.speed = 0;
 		}));
+		if (jaws.pressed("space")) {
+			camera.takePicture();
+		};
 		player.move();
 	};
 }
